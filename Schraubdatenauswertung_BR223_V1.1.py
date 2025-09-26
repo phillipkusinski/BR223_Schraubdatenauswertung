@@ -18,7 +18,7 @@ save_path = 0
 variant = 0
 start_date = 0
 end_date = 0
-calendarweek = 0
+calendarweek_start = 0
 list_of_days = ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."]
 
 #function definitions
@@ -42,7 +42,8 @@ def open_csv_files():
 def submit_dates(list_of_days):
     global start_date
     global end_date
-    global calendarweek
+    global calendarweek_start
+    global calendarweek_end
     #set start and end date
     start_date = start_cal.get_date()
     start_date = pd.to_datetime(start_date)
@@ -58,17 +59,18 @@ def submit_dates(list_of_days):
     elif start_date > end_date:
         messagebox.showerror("Ungültige Auswahl", "Das Startdatum darf nicht nach dem Enddatum liegen.")
         return
-    #if start_date and end_date is not in the same calendarweek an error must occur
+    #set multiple calendarweeks
     elif start_date.isocalendar().week != end_date.isocalendar().week:
-        messagebox.showerror("Ungültige Auswahl", "Es wurde keine gültige Kalenderwoche ausgewählt")
-        return
+        calendarweek_start = start_date.isocalendar().week
+        calendarweek_end = end_date.isocalendar().week
+        messagebox.showinfo("Datumsauswahl", f"Ausgewählte Datum: KW{calendarweek_start} - KW{calendarweek_end}, von {list_of_days[start_date.weekday()]} {start_date.date()} bis {list_of_days[end_date.weekday()]} {end_date.date()}")
     #single date chosen
     elif start_date == end_date:
         messagebox.showinfo("Datumsauswahl", f"Ausgewähltes Datum: {list_of_days[start_date.weekday()]} {start_date.date()}")
     #calendarweek chosen
     else:
-        calendarweek = start_date.isocalendar().week
-        messagebox.showinfo("Datumsauswahl", f"Ausgewählte Datum: KW{calendarweek}, von {list_of_days[start_date.weekday()]} {start_date.date()} bis {list_of_days[end_date.weekday()]} {end_date.date()}")
+        calendarweek_start = start_date.isocalendar().week
+        messagebox.showinfo("Datumsauswahl", f"Ausgewählte Datum: KW{calendarweek_start}, von {list_of_days[start_date.weekday()]} {start_date.date()} bis {list_of_days[end_date.weekday()]} {end_date.date()}")
 
 def select_save_path():
     global save_path
@@ -235,8 +237,10 @@ def excel_export(**kwargs):
     #set excel filename for single day and for weekly output
     if start_date == end_date:
         filename = f"{save_path}/Schraubreport_{variant}_{start_date.date()}.xlsx"
+    elif calendarweek_start != calendarweek_end:
+        filename = f"{save_path}/Schraubreport_{variant}_KW{calendarweek_start}-KW{calendarweek_end}_{start_date.date()},{end_date.date()}.xlsx"
     else:
-        filename = f"{save_path}/Schraubreport_{variant}_KW{calendarweek}_{start_date.date()},{end_date.date()}.xlsx"   
+        filename = f"{save_path}/Schraubreport_{variant}_KW{calendarweek_start}_{start_date.date()},{end_date.date()}.xlsx"   
     #export excel function with variable **kwargs input     
     with pd.ExcelWriter(filename) as writer:
         for name, df in kwargs.items():
@@ -330,7 +334,10 @@ def create_pareto_weekly(df_grouped_detailed_weekly, side, list_of_days):
     ax2.axhline(80, color='gray', linestyle='--', label='80 % Schwelle')
     
     plt.tight_layout(pad=1.5)
-    plt.title(f'Pareto-Diagramm der Fehlverschraubungen KW{calendarweek}, {list_of_days[start_date.weekday()]} {start_date.date()} bis {list_of_days[end_date.weekday()]} {end_date.date()}, {variant} {side}')
+    if calendarweek_start == calendarweek_end:
+        plt.title(f'Pareto-Diagramm der Fehlverschraubungen KW{calendarweek_start}, {list_of_days[start_date.weekday()]} {start_date.date()} bis {list_of_days[end_date.weekday()]} {end_date.date()}, {variant} {side}')
+    else:
+        plt.title(f'Pareto-Diagramm der Fehlverschraubungen KW{calendarweek_start}-KW{calendarweek_end}, {list_of_days[start_date.weekday()]} {start_date.date()} bis {list_of_days[end_date.weekday()]} {end_date.date()}, {variant} {side}')
     return fig
 
 def pdf_report_export(fig_l, fig_r):
@@ -350,8 +357,22 @@ def pdf_report_export(fig_l, fig_r):
             pdf.infodict()['Subject'] = 'Dieser Prüfbericht wurde mit der Software Schraubdatenauswertung_BR223 erstellt.'
             pdf.infodict()['Keywords'] = 'BR223, Screwing, Report, Pareto'
     #weekly output
+    elif calendarweek_start != calendarweek_end:
+        filename = f"{save_path}/Prüfbericht_{variant}_KW{calendarweek_start}-KW{calendarweek_end}_{start_date.date()}-{end_date.date()}.pdf"
+        #PDF export
+        with PdfPages(filename) as pdf:
+            
+            fig_l.set_size_inches(11.69, 8.27)
+            fig_r.set_size_inches(11.69, 8.27)
+            pdf.savefig(fig_l)
+            pdf.savefig(fig_r)
+            #set metadata
+            pdf.infodict()['Title'] = 'BR223 Prüfbericht Schraubzelle'
+            pdf.infodict()['Author'] = 'Phillip Kusinski'
+            pdf.infodict()['Subject'] = 'Dieser Prüfbericht wurde mit der Software Schraubdatenauswertung_BR223 erstellt.'
+            pdf.infodict()['Keywords'] = 'BR223, Screwing, Report, Pareto'
     else:
-        filename = f"{save_path}/Prüfbericht_{variant}_KW{calendarweek}_{start_date.date()}-{end_date.date()}.pdf"
+        filename = f"{save_path}/Prüfbericht_{variant}_KW{calendarweek_start}_{start_date.date()}-{end_date.date()}.pdf"
         #PDF export
         with PdfPages(filename) as pdf:
             
@@ -494,7 +515,7 @@ if __name__ == "__main__":
 
     #Author + Version
     lbl_version = ttk.Label(root,
-                            text="Phillip Kusinski, V1.1",
+                            text="Phillip Kusinski, V1.2",
                             style="TLabel") 
     lbl_version.grid(row=9, column=0, sticky="e")
 
